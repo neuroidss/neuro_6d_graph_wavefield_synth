@@ -9,13 +9,14 @@ By integrating **6D directed phase-locking graphs (iPLV)** across 16 micro-elect
 ## 📑 Table of Contents
 1. [Theoretical & Neuroscientific Foundations](#1-theoretical--neuroscientific-foundations)
    - [1.1 Prefrontal Tonal Manifold ($\mathbb{T}^2$)](#11-prefrontal-tonal-manifold-mathbft2)
-   - [1.2 Working Memory 2.0: Theta-Gamma Phase Multiplexing](#12-working-memory-20-theta-gamma-phase-multiplexing)
+   - [1.2 Working Memory 2.0: Theta-Gamma Phase Multiplexing & Temporal Coding](#12-working-memory-20-theta-gamma-phase-multiplexing--temporal-coding)
    - [1.3 6D Directed Phase-Lag Connectivity (iPLV)](#13-6d-directed-phase-lag-connectivity-iplv)
    - [1.4 Auditory Predictive Coding & Sensorimotor Closed-Loop](#14-auditory-predictive-coding--sensorimotor-closed-loop)
 2. [Mathematical Formulations & 4-Axis Decomposition](#2-mathematical-formulations--4-axis-decomposition)
    - [2.1 4-Axis Decomposition of the Intention Vector](#21-4-axis-decomposition-of-the-intention-vector)
    - [2.2 120-Edge Physical Topology & Modal Percussion Matrix](#22-120-edge-physical-topology--modal-percussion-matrix)
    - [2.3 Weber-Fechner Logarithmic Companding](#23-weber-fechner-logarithmic-companding)
+   - [2.4 Temporal Dynamics & Rhythm Engine ($ry$ & $\mathbf{S}_{32}$)](#24-temporal-dynamics--rhythm-engine-ry--mathbfs_32)
 3. [Audio Engine Architecture](#3-audio-engine-architecture)
    - [3.1 12-Channel Persistent Phase Banks & Sample-Accurate Linear Ramping](#31-12-channel-persistent-phase-banks--sample-accurate-linear-ramping)
    - [3.2 Continuous Morphing: Dark Psybient $\longleftrightarrow$ Full-On Psytrance](#32-continuous-morphing-dark-psybient-longleftrightarrow-full-on-psytrance)
@@ -39,6 +40,7 @@ By integrating **6D directed phase-locking graphs (iPLV)** across 16 micro-elect
    │   - Low Gamma (30–50 Hz)  --> Retrospective Past (S₀)       │
    │   - High Gamma (60–85 Hz) --> Prospective Future (S₃₁)      │
    │   - Sagitta κ(u)          --> Harmonic Tension & Acid Sweep │
+   │   - Temporality ry        --> Rolling Bass Momentum & Drive │
    └──────────────────────────────┬──────────────────────────────┘
                                   │ 26mm Sensor Scalp Potential
                                   ▼
@@ -66,18 +68,19 @@ Functional neuroimaging demonstrates that the human brain organizes musical harm
 
 In NeuroCanvas, navigation is unconstrained: the cognitive state vector glides along geodesic trajectories on the toroidal surface without arbitrary Cartesian boundaries.
 
-### 1.2 Working Memory 2.0: Theta-Gamma Phase Multiplexing
-Under the **Working Memory 2.0** framework [Miller, Lundqvist, & Bastos, 2018] [3], information items are time-multiplexed into discrete gamma-band bursts nested within slower theta oscillations (4–8 Hz) [Lisman & Jensen, 2013] [6]:
-* **Low Gamma (30–50 Hz, Early Theta Phase):** Anchors **Retrospective Retrieval ($S_0$, Past)** [Colgin et al., 2009] [4].
-* **High Gamma (60–85 Hz, Late Theta Phase):** Encodes **Prospective Prediction ($S_{31}$, Future)** [Heusser et al., 2016] [5].
+### 1.2 Working Memory 2.0: Theta-Gamma Phase Multiplexing & Temporal Coding
+Under the **Working Memory 2.0** framework [Miller, Lundqvist, & Bastos, 2018] [2], cognitive representations are time-multiplexed into discrete gamma-band bursts nested within slower theta oscillations (4–8 Hz) [Lisman & Jensen, 2013] [5]:
+* **Low Gamma (30–50 Hz, Early Theta Phase):** Anchors **Retrospective Retrieval ($S_0$, Past)** [Colgin et al., 2009] [7].
+* **High Gamma (60–85 Hz, Late Theta Phase):** Encodes **Prospective Prediction ($S_{31}$, Future)** [Heusser et al., 2016] [8].
+* **Temporality ($ry$):** Represents the dynamic ratio of phase velocity between retrospective grounding and prospective momentum. When prospective drive dominates, the temporal axis accelerates the rhythmic engine into an offbeat rolling gallop.
 
 ### 1.3 6D Directed Phase-Lag Connectivity (iPLV)
-To eliminate volume conduction and source leakage across the 26mm 16-channel array, NeuroCanvas implements the reformulated **imaginary Phase Locking Value (iPLV)** [Bruña, Maestú, & Pereda, 2018] [7]:
+To eliminate volume conduction and source leakage across the 26mm 16-channel array, NeuroCanvas implements the reformulated **imaginary Phase Locking Value (iPLV)** [Bruña, Maestú, & Pereda, 2018] [3]:
 $$\text{iPLV}_{i,j} = \frac{1}{T} \Im \left\{ \sum_{t=1}^T \dot{x}_i(t) \cdot \dot{x}_j^*(t) \right\} = \frac{1}{T} \sum_{t=1}^T \sin(\varphi_i(t) - \varphi_j(t))$$
 The sign of $\text{iPLV}_{i,j}$ determines the physical vector of traveling phase waves across the cortical patch ($\text{sign} > 0 \implies i \to j$; $\text{sign} < 0 \implies j \to i$).
 
 ### 1.4 Auditory Predictive Coding & Sensorimotor Closed-Loop
-The brain processes auditory input via hierarchical predictive coding [Vuust et al., 2022; Koelsch, 2014] [8, 9]. NeuroCanvas establishes a closed sensory-motor feedback loop:
+The brain processes auditory input via hierarchical predictive coding [Vuust et al., 2022; Koelsch, 2014] [4, 6]. NeuroCanvas establishes a closed sensory-motor feedback loop:
 1. The engine synthesizes a polyphonic harmonic state on the Tonal Torus.
 2. The auditory-prefrontal cortex anticipates the resolution, generating an intentional trajectory ($\text{iPLV}_{32 \times 120}$).
 3. The engine decodes the trajectory in real time, modulates the tonal center, and returns audible confirmation to the auditory cortex.
@@ -93,8 +96,8 @@ From the 32-point phase-space trajectory $\mathbf{S} = \{s_0, s_1, \dots, s_{31}
 | :--- | :--- | :--- | :--- |
 | **$lx$** | **Tonal Longitude** | $\Delta x = \frac{s_{31}^x - s_0^x}{\|\mathbf{d}\|}$ | Navigation along Circle of Fifths ($\theta$) [Janata 2002] [1] |
 | **$ly$** | **Tonal Latitude** | $\Delta y = \frac{s_{31}^y - s_0^y}{\|\mathbf{d}\|}$ | Navigation along Major/Minor Thirds ($\phi$) [Janata 2002] [1] |
-| **$rx$** | **Sagitta $\kappa(u)$** | $\frac{1}{16\|\mathbf{d}\|} \sum_{k=1}^{30} \left( \Delta x \cdot py_k - \Delta y \cdot px_k \right)$ | Lateral trajectory curvature $\to$ TB-303 Acid Resonance / Squelch [Koelsch 2014] [9] |
-| **$ry$** | **Temporal Bias** | $\frac{\|\mathbf{S}_{future}\| - \|\mathbf{S}_{past}\|}{\|\mathbf{S}_{future}\| + \|\mathbf{S}_{past}\| + \epsilon}$ | Phase acceleration $\to$ K-B-B-B Rolling Bass Drive & Momentum [Colgin 2009; Heusser 2016] [4, 5] |
+| **$rx$** | **Sagitta $\kappa(u)$** | $\frac{1}{16\|\mathbf{d}\|} \sum_{k=1}^{30} \left( \Delta x \cdot py_k - \Delta y \cdot px_k \right)$ | Lateral trajectory curvature $\to$ TB-303 Acid Resonance / Squelch [Koelsch 2014] [6] |
+| **$ry$** | **Temporal Bias** | $\frac{\|\mathbf{S}_{future}\| - \|\mathbf{S}_{past}\|}{\|\mathbf{S}_{future}\| + \|\mathbf{S}_{past}\| + \epsilon}$ | Phase acceleration $\to$ K-B-B-B Rolling Bass Drive & Momentum [Colgin 2009; Heusser 2016] [7, 8] |
 
 ### 2.2 120-Edge Physical Topology & Modal Percussion Matrix
 The 120 electrode pairs $(i, j)$ on the 26mm sensor are partitioned into **3 physical percussion registers** based on their spatial euclidean length $L_p = \sqrt{\Delta X_p^2 + \Delta Y_p^2}$:
@@ -106,6 +109,46 @@ The 120 electrode pairs $(i, j)$ on the 26mm sensor are partitioned into **3 phy
 To prevent acoustic masking while retaining 100% of all 120 active connections without muting:
 $$\text{Amp}_p = \text{SoftFloor} + (1 - \text{SoftFloor}) \cdot \frac{\ln(1 + 4 \cdot \text{NormPower}_p)}{\ln(5)}$$
 All 120 edges remain audible ($\ge 20\%$ presence), with dominant functional networks rising to the foreground while subtle sub-networks provide a rich, transparent spatial bed.
+
+### 2.4 Temporal Dynamics & Rhythm Engine ($ry$ & $\mathbf{S}_{32}$)
+In traditional electronic music, rhythm is generated via rigid, hardcoded clock divisions (e.g., static 140 BPM grid), which ignores the brain's real-time temporal mechanics. In **NeuroCanvas**, the entire rhythm and drum architecture is **100% emergent from the 32 temporal slices of the working memory trajectory ($\mathbf{S}_{32} = \{s_0, s_1, \dots, s_{31}\}$) and the Temporal Bias axis ($ry$)**:
+
+```
+        ┌─────────────────── 32 TEMPORAL SLICES (traj_32) ───────────────────┐
+        │  S₀ (0/4: KICK)  ──►  S₈ (1/4: BASS 1)  ──►  S₁₆ (2/4: BASS 2)  ──►  S₂₄ (3/4: BASS 3)  ──►  S₃₁ (FUTURE) │
+        └────────────────────────────────────┬────────────────────────────────────┘
+                                             │
+                       ┌─────────────────────┴─────────────────────┐
+                       ▼                                           ▼
+            DYNAMIC ACCENTS & SWING                     ROLLING BASS MOMENTUM (ry)
+      Segment Velocities ||Sₖ₊₁ - Sₖ||           ry < 0: Heavy Sub-Body / Kick Focus
+      govern per-hit velocity & dynamics         ry > 0: High-Energy 16th Gallop Drive
+```
+
+#### 1. 4-Segment Trajectory Partitioning for the K-B-B-B Grid
+Instead of static mechanical triggers, the 4 subdivisions of the quarter-beat measure are bound directly to the 4 cardinal checkpoints of the 32-slice trajectory:
+* **$S_0 \to S_8$ (Downbeat Segment / Past):** Drives the **Kick Punch & Body Energy ($w_{kick}$)**.
+* **$S_8 \to S_{16}$ (First Offbeat Segment):** Drives the velocity of **Bass Hit 1 ($w_{b1}$)**.
+* **$S_{16} \to S_{24}$ (Midpoint Bridge Segment):** Drives the velocity of **Bass Hit 2 & Open Hat ($w_{b2}$)**.
+* **$S_{24} \to S_{31}$ (Leading Future Segment):** Drives the velocity of **Bass Hit 3 ($w_{b3}$)**.
+
+The dynamic velocity weight of each rhythmic step is computed from the real-time physical step distance in the brain's phase space:
+$$v_0 = \|s_8 - s_0\|, \quad v_1 = \|s_{16} - s_8\|, \quad v_2 = \|s_{24} - s_{16}\|, \quad v_3 = \|s_{31} - s_{24}\|$$
+$$w_{step} = \text{clamp}\left(1.8 \cdot \frac{v_k}{\sum v_i}, 0.5, 1.4\right)$$
+
+#### 2. Temporal Bias ($ry$) as Rolling Bass Momentum
+The global Temporal Bias $ry$ determines the balance of momentum between retrospective anchor and prospective drive:
+$$ry = \frac{\sum_{k=16}^{31} \text{HighGamma}_k - \sum_{k=0}^{15} \text{LowGamma}_k}{\sum_{k=16}^{31} \text{HighGamma}_k + \sum_{k=0}^{15} \text{LowGamma}_k + \epsilon}$$
+
+* **Retrospective Focus ($ry < 0$ / Low Gamma Dominance):**
+  The rhythmic energy settles into the foundational **Kick and Sub-Body ($S_0$)**. The offbeat bass softens into a wide, sustained legato drone.
+* **Prospective Focus ($ry > 0$ / High Gamma Anticipation):**
+  The rhythmic energy surges into the **Offbeat Rolling Bass (the 3 "B"s)**. The bass envelope decay tightens ($\text{decay} \propto 6.0 + 3.0 \cdot ry$), creating an aggressive, driving 16th-note gallop that physically propels the musical progression forward.
+
+#### 3. Dynamic Tempo Scaling ($135 \text{--} 146\text{ BPM}$)
+The instantaneous tempo of the track breathes continuously with the aggregate trajectory velocity:
+$$\text{Live BPM} = 136.0 + \text{clamp}\left(2.5 \cdot \sum_{i=0}^3 v_i, 0.0, 10.0\right)$$
+This anchors the groove strictly within the natural human psytrance perception window ($135\text{--}146\text{ BPM}$, corresponding to an optimal $105\text{ ms}$ per 16th-note), preventing auditory roughness/rattling while maintaining 100% biological synchronization.
 
 ---
 
