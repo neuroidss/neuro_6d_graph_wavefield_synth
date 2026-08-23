@@ -4,6 +4,8 @@
 
 By integrating **6D directed phase-locking graphs (iPLV)** across 16 micro-electrodes with the **topological Tonal Torus ($\mathbb{T}^2$) of working memory**, the system allows the human brain to perceive, navigate, and steer its own spatiotemporal cognitive trajectories through auditory predictive coding.
 
+---
+
 ## 🎥 Real-Time Neurofeedback Demos
 
 ### 1. Dark Psybient & Continuous Torus Navigation
@@ -24,7 +26,7 @@ By integrating **6D directed phase-locking graphs (iPLV)** across 16 micro-elect
    - [2.1 4-Axis Decomposition of the Intention Vector](#21-4-axis-decomposition-of-the-intention-vector)
    - [2.2 120-Edge Physical Topology & Modal Percussion Matrix](#22-120-edge-physical-topology--modal-percussion-matrix)
    - [2.3 Weber-Fechner Logarithmic Companding](#23-weber-fechner-logarithmic-companding)
-   - [2.4 Temporal Dynamics & Rhythm Engine ($ry$ & $\mathbf{S}_{32}$)](#24-temporal-dynamics--rhythm-engine-ry--mathbfs_32)
+   - [2.4 Temporal Dynamics & Rhythm Engine ($ry$ & $S_{32}$)](#24-temporal-dynamics--rhythm-engine-ry--s_32)
 3. [Audio Engine Architecture](#3-audio-engine-architecture)
    - [3.1 12-Channel Persistent Phase Banks & Sample-Accurate Linear Ramping](#31-12-channel-persistent-phase-banks--sample-accurate-linear-ramping)
    - [3.2 Continuous Morphing: Dark Psybient $\longleftrightarrow$ Full-On Psytrance](#32-continuous-morphing-dark-psybient-longleftrightarrow-full-on-psytrance)
@@ -98,14 +100,14 @@ The brain processes auditory input via hierarchical predictive coding [Vuust et 
 ## 📐 2. Mathematical Formulations & 4-Axis Decomposition
 
 ### 2.1 4-Axis Decomposition of the Intention Vector
-From the 32-point phase-space trajectory $\mathbf{S} = \{s_0, s_1, \dots, s_{31}\}$, four canonical control axes are extracted:
+From the 32-point phase-space trajectory $S = \{s_0, s_1, \dots, s_{31}\}$, four canonical control axes are extracted:
 
 | Axis | Metric Name | Mathematical Definition | Acoustic Function in Synthesis |
 | :--- | :--- | :--- | :--- |
-| **$lx$** | **Tonal Longitude** | $\Delta x = \frac{s_{31}^x - s_0^x}{\|\mathbf{d}\|}$ | Navigation along Circle of Fifths ($\theta$) [Janata 2002] [1] |
-| **$ly$** | **Tonal Latitude** | $\Delta y = \frac{s_{31}^y - s_0^y}{\|\mathbf{d}\|}$ | Navigation along Major/Minor Thirds ($\phi$) [Janata 2002] [1] |
-| **$rx$** | **Sagitta $\kappa(u)$** | $\frac{1}{16\|\mathbf{d}\|} \sum_{k=1}^{30} \left( \Delta x \cdot py_k - \Delta y \cdot px_k \right)$ | Lateral trajectory curvature $\to$ TB-303 Acid Resonance / Squelch [Koelsch 2014] [6] |
-| **$ry$** | **Temporal Bias** | $\frac{\|\mathbf{S}_{future}\| - \|\mathbf{S}_{past}\|}{\|\mathbf{S}_{future}\| + \|\mathbf{S}_{past}\| + \epsilon}$ | Phase acceleration $\to$ K-B-B-B Rolling Bass Drive & Momentum [Colgin 2009; Heusser 2016] [7, 8] |
+| **$lx$** | **Tonal Longitude** | $\Delta x = \frac{s_{31}^x - s_0^x}{\|d\|}$ | Navigation along Circle of Fifths ($\theta$) [Janata 2002] [1] |
+| **$ly$** | **Tonal Latitude** | $\Delta y = \frac{s_{31}^y - s_0^y}{\|d\|}$ | Navigation along Major/Minor Thirds ($\phi$) [Janata 2002] [1] |
+| **$rx$** | **Sagitta $\kappa(u)$** | $\frac{1}{16\|d\|} \sum_{k=1}^{30} \left( \Delta x \cdot py_k - \Delta y \cdot px_k \right)$ | Lateral trajectory curvature $\to$ TB-303 Acid Resonance / Squelch [Koelsch 2014] [6] |
+| **$ry$** | **Temporal Bias** | $\frac{\|S_{future}\| - \|S_{past}\|}{\|S_{future}\| + \|S_{past}\| + \epsilon}$ | Phase acceleration $\to$ K-B-B-B Rolling Bass Drive & Momentum [Colgin 2009; Heusser 2016] [7, 8] |
 
 ### 2.2 120-Edge Physical Topology & Modal Percussion Matrix
 The 120 electrode pairs $(i, j)$ on the 26mm sensor are partitioned into **3 physical percussion registers** based on their spatial euclidean length $L_p = \sqrt{\Delta X_p^2 + \Delta Y_p^2}$:
@@ -118,8 +120,8 @@ To prevent acoustic masking while retaining 100% of all 120 active connections w
 $$\text{Amp}_p = \text{SoftFloor} + (1 - \text{SoftFloor}) \cdot \frac{\ln(1 + 4 \cdot \text{NormPower}_p)}{\ln(5)}$$
 All 120 edges remain audible ($\ge 20\%$ presence), with dominant functional networks rising to the foreground while subtle sub-networks provide a rich, transparent spatial bed.
 
-### 2.4 Temporal Dynamics & Rhythm Engine ($ry$ & $\mathbf{S}_{32}$)
-In traditional electronic music, rhythm is generated via rigid, hardcoded clock divisions (e.g., static 140 BPM grid), which ignores the brain's real-time temporal mechanics. In **NeuroCanvas**, the entire rhythm and drum architecture is **100% emergent from the 32 temporal slices of the working memory trajectory ($\mathbf{S}_{32} = \{s_0, s_1, \dots, s_{31}\}$) and the Temporal Bias axis ($ry$)**:
+### 2.4 Temporal Dynamics & Rhythm Engine ($ry$ & $S_{32}$)
+In traditional electronic music, rhythm is generated via rigid, hardcoded clock divisions (e.g., static 140 BPM grid), which ignores the brain's real-time temporal mechanics. In **NeuroCanvas**, the entire rhythm and drum architecture is **100% emergent from the 32 temporal slices of the working memory trajectory ($S_{32} = \{s_0, s_1, \dots, s_{31}\}$) and the Temporal Bias axis ($ry$)**:
 
 ```
         ┌─────────────────── 32 TEMPORAL SLICES (traj_32) ───────────────────┐
