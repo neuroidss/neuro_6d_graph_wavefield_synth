@@ -8,11 +8,11 @@ By integrating **6D directed phase-locking graphs (iPLV)** across 16 micro-elect
 
 ## 🎥 Real-Time Neurofeedback Demos
 
-### 1. Dark Psybient & Continuous Torus Navigation
-[![NeuroCanvas Psybient Demo](https://img.youtube.com/vi/P_fH1Smlr6Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=P_fH1Smlr6Y "Watch NeuroCanvas Demo 1")
-
-### 2. Melodic Full-On Psytrance & Modal Percussion
+### 1. Melodic Full-On Psytrance & Modal Percussion
 [![NeuroCanvas Full-On Demo](https://img.youtube.com/vi/kbu9Etb1WEo/maxresdefault.jpg)](https://www.youtube.com/watch?v=kbu9Etb1WEo "Watch NeuroCanvas Demo 2")
+
+### 2. Dark Psybient & Continuous Torus Navigation
+[![NeuroCanvas Psybient Demo](https://img.youtube.com/vi/P_fH1Smlr6Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=P_fH1Smlr6Y "Watch NeuroCanvas Demo 1")
 
 ---
 
