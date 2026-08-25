@@ -146,7 +146,7 @@ $$\text{Total Edges} = C_4^2 + C_{12}^2 + (4 \times 12) = 6 + 66 + 48 = 120$$
 
 ### 2.3 Causal Instantaneous Directed iPLV (Zero Volume Conduction)
 To eradicate instantaneous volume conduction across the 26-mm micro-array ($\Delta \varphi = 0$) [Bruña, Maestú, & Pereda, 2018; Nolte et al., 2004]:
-$$\mathrm{iPLV}_{i,j}(t) = \sin\left(\varphi_i(t) - \varphi_j(t)\right) = \Im \left\{ \frac{\dot{x}_i(t)}{|\dot{x}_i(t)|} \cdot \left(\frac{\dot{x}_j(t)}{|\dot{x}_j(t)|}\right)^* \right\}$$
+$$\mathrm{iPLV}_{i,j}(t) = \sin\left(\varphi_i(t) - \varphi_j(t)\right) = \Im \left\\{ \frac{\dot{x}_i(t)}{|\dot{x}_i(t)|} \cdot \left(\frac{\dot{x}_j(t)}{|\dot{x}_j(t)|}\right)^* \right\\}$$
 
 ### 2.4 Continuous Sub-Bin Spectral Centroid & Physical Phase Velocity ($\frac{d\Phi_\theta}{dt}$)
 To eliminate discrete FFT bin jumps ($126 \leftrightarrow 176 \leftrightarrow 192\text{ BPM}$), the continuous biological Theta frequency is computed directly as the **sub-bin spectral center of mass** with exponential moving average smoothing:
