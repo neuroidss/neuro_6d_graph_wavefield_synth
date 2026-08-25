@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-🧠 NEUROCANVAS: MODAL PERCUSSION PSY-TORUS NAVIGATOR (GPU ACCELERATED)
-Features DUAL NAVIGATION: Toggle between RELATIVE (Joystick) and ABSOLUTE (Pointer) mappings.
+🧠 NEUROCANVAS: PURE TENSOR CONTINUOUS PSYTRANCE SUITE (v74)
+- Непрерывный темп (Continuous Theta Slaving).
+- 100% Линейная тензорная интерполяция на CUDA (Без щелчков и цифрового шума).
+- 100% Векторизованный расчет 32 точек Тора на GPU (Без циклов в Python).
+- Чистый, плотный, аналоговый Full-On Psytrance.
 """
 
 import os
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import multiprocessing as mp
-
 try:
     mp.set_start_method('spawn', force=True)
 except RuntimeError:
@@ -22,470 +24,426 @@ import threading
 import torch
 
 from neuro_heterarchy_core import (
-    HeterarchicalBrainEngine, NUM_FREQS, NUM_PAIRS, 
+    HeterarchicalBrainEngine, NUM_CHANNELS, NUM_FREQS, NUM_PAIRS,
     COORDS_X, COORDS_Y, I_IDX, J_IDX
 )
 
 SAMPLE_RATE = 44100
 BLOCK_SIZE = 1024
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# ==============================================================================
-# 26-MM SENSOR TOPOLOGY (16 ELECTRODES, 120 DIRECTED EDGES)
-# ==============================================================================
-SRC_X, SRC_Y = COORDS_X[I_IDX], COORDS_Y[I_IDX]
-DST_X, DST_Y = COORDS_X[J_IDX], COORDS_Y[J_IDX]
+WIDTH, HEIGHT = 1280, 800
+CENTER_X, CENTER_Y = 400, 400
+R_MAJOR, R_MINOR = 240.0, 100.0
 
-DX_PAIRS = DST_X - SRC_X
-DY_PAIRS = DST_Y - SRC_Y
-SCALE_26MM = 26.0 
+SRC_X, SRC_Y = COORDS_X[I_IDX] / 13.0, COORDS_Y[I_IDX] / 13.0
+DST_X, DST_Y = COORDS_X[J_IDX] / 13.0, COORDS_Y[J_IDX] / 13.0
+DX_PAIRS = (DST_X - SRC_X).astype(np.float32)
+DY_PAIRS = (DST_Y - SRC_Y).astype(np.float32)
+MID_X_PAIRS = ((SRC_X + DST_X) * 0.5).astype(np.float32)
+MID_Y_PAIRS = ((SRC_Y + DST_Y) * 0.5).astype(np.float32)
 
-PAIR_LENGTHS = np.hypot(DX_PAIRS, DY_PAIRS)
-MASK_SHORT_CPU = (PAIR_LENGTHS < 8.0).astype(np.float32)
-MASK_MED_CPU   = ((PAIR_LENGTHS >= 8.0) & (PAIR_LENGTHS < 15.0)).astype(np.float32)
-MASK_LONG_CPU  = (PAIR_LENGTHS >= 15.0).astype(np.float32)
+RADII = np.hypot(COORDS_X, COORDS_Y)
+IS_INNER = RADII < 8.0
 
-RAW_INTERVALS = ((DX_PAIRS / SCALE_26MM) * 12.0 * 1.5 + (DY_PAIRS / SCALE_26MM) * 7.0).astype(np.float32)
-CONSONANT_SCALE = np.array([-12, -5, 0, 3, 7, 10, 12, 14, 15, 19, 22, 24, 27, 31], dtype=np.float32)
-
-QUANTIZED_INTERVALS = np.zeros(NUM_PAIRS, dtype=np.float32)
+idx_inner_inner, idx_outer_outer, idx_inner_outer = [], [], []
 for p in range(NUM_PAIRS):
-    idx = np.argmin(np.abs(CONSONANT_SCALE - RAW_INTERVALS[p]))
-    QUANTIZED_INTERVALS[p] = CONSONANT_SCALE[idx]
+    ch_i, ch_j = I_IDX[p], J_IDX[p]
+    if IS_INNER[ch_i] and IS_INNER[ch_j]: idx_inner_inner.append(p)
+    elif not IS_INNER[ch_i] and not IS_INNER[ch_j]: idx_outer_outer.append(p)
+    else: idx_inner_outer.append(p)
 
-MICRO_DETUNE_CPU = (RAW_INTERVALS - QUANTIZED_INTERVALS) * 0.12
-MID_X_CPU = ((SRC_X + DST_X) * 0.5 / 13.0).astype(np.float32)
+IDX_KICK = torch.tensor(idx_inner_inner, device=DEVICE, dtype=torch.long)
+IDX_PAD  = torch.tensor(idx_outer_outer, device=DEVICE, dtype=torch.long)
+IDX_ACID = torch.tensor(idx_inner_outer, device=DEVICE, dtype=torch.long)
 
-TORUS_FIFTHS = ["C", "G", "D", "A", "E", "B", "F#", "Db", "Ab", "Eb", "Bb", "F"]
-CHORD_ROOTS = np.array([0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5], dtype=np.float32)
-NUM_KEYS = 12
+# GPU-тензоры топологии для мгновенного векторного расчета координат
+DX_GPU = torch.from_numpy(DX_PAIRS).to(DEVICE)
+DY_GPU = torch.from_numpy(DY_PAIRS).to(DEVICE)
+MID_X_GPU = torch.from_numpy(MID_X_PAIRS).to(DEVICE)
+MID_Y_GPU = torch.from_numpy(MID_Y_PAIRS).to(DEVICE)
 
-def midi_to_hz(midi_val):
-    return 440.0 * (2.0 ** ((midi_val - 69.0) / 12.0))
-
-# ==============================================================================
-# GPU SYNTHESIZER: MODAL PERCUSSION & PSYBIENT ENGINE
-# ==============================================================================
-class ModalPercussionPsySynth:
-    def __init__(self):
-        self.sr = SAMPLE_RATE
-        self.block_size = BLOCK_SIZE
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
-        freq_grid = np.zeros((NUM_KEYS, NUM_PAIRS), dtype=np.float32)
-        for k in range(NUM_KEYS):
-            root_k = 48.0 + CHORD_ROOTS[k]
-            midi_notes = root_k + QUANTIZED_INTERVALS + MICRO_DETUNE_CPU
-            freq_grid[k, :] = midi_to_hz(midi_notes)
-
-        bass_freq = midi_to_hz(36.0 + CHORD_ROOTS)
-
-        self.freq_grid_gpu = torch.from_numpy(freq_grid).to(self.device)
-        self.bass_freq_gpu = torch.from_numpy(bass_freq).to(self.device)
-        self.phase_incs_gpu = (2.0 * math.pi * self.freq_grid_gpu / self.sr).unsqueeze(-1)
-        self.bass_incs_gpu  = (2.0 * math.pi * self.bass_freq_gpu / self.sr).unsqueeze(-1)
-
-        self.dx_gpu = torch.from_numpy(DX_PAIRS).to(self.device, dtype=torch.float32)
-        self.dy_gpu = torch.from_numpy(DY_PAIRS).to(self.device, dtype=torch.float32)
-        self.mid_x_gpu = torch.from_numpy(MID_X_CPU).to(self.device, dtype=torch.float32).view(1, NUM_PAIRS, 1)
-
-        self.mask_short = torch.from_numpy(MASK_SHORT_CPU).to(self.device).view(1, NUM_PAIRS, 1)
-        self.mask_med   = torch.from_numpy(MASK_MED_CPU).to(self.device).view(1, NUM_PAIRS, 1)
-        self.mask_long  = torch.from_numpy(MASK_LONG_CPU).to(self.device).view(1, NUM_PAIRS, 1)
-
-        self.theta_nodes_gpu = torch.linspace(0, 2.0 * math.pi, NUM_KEYS, device=self.device, dtype=torch.float32)
-        self.step_rad = 2.0 * math.pi / NUM_KEYS
-
-        self.t_vec_gpu = torch.arange(self.block_size, device=self.device, dtype=torch.float32).view(1, 1, self.block_size)
-        self.bass_t_vec_gpu = torch.arange(self.block_size, device=self.device, dtype=torch.float32).view(1, self.block_size)
-        self.t_ramp_gpu = torch.linspace(0.0, 1.0, self.block_size, device=self.device, dtype=torch.float32).view(1, 1, self.block_size)
-
-        self.bank_phases_gpu = torch.zeros((NUM_KEYS, NUM_PAIRS), device=self.device, dtype=torch.float32)
-        self.bass_phases_gpu = torch.zeros(NUM_KEYS, device=self.device, dtype=torch.float32)
-        self.groove_phase = 0.0
-        self.kick_phase = 0.0
-
-        self.prev_key_gains_gpu = torch.zeros(NUM_KEYS, device=self.device, dtype=torch.float32)
-        self.prev_edge_amps_gpu = torch.zeros((1, NUM_PAIRS, 1), device=self.device, dtype=torch.float32)
-
-        self.target_iplv_gpu = torch.zeros((NUM_FREQS, NUM_PAIRS), device=self.device, dtype=torch.float32)
-        self.target_traj_gpu = torch.zeros((NUM_FREQS, 2), device=self.device, dtype=torch.float32)
-        
-        self.target_theta = 0.0
-        self.target_phi = 0.0
-        self.curr_theta = 0.0
-        self.curr_phi = 0.0
-        self.live_theta_sync = 0.5
-        self.style_morph = 0.0
-        
-        self.param_lock = threading.Lock()
-        self.audio_queue = queue.Queue(maxsize=32)
-
-    def update_state(self, theta, phi, traj_32, iplv_32, theta_s, morph):
-        with self.param_lock:
-            self.target_theta = theta
-            self.target_phi = phi
-            self.target_traj_gpu.copy_(torch.from_numpy(traj_32))
-            self.target_iplv_gpu.copy_(torch.from_numpy(np.abs(iplv_32)))
-            self.live_theta_sync = float(np.clip(theta_s, 0.05, 1.0))
-            self.style_morph = float(np.clip(morph, 0.0, 1.0))
-
-    def render_block(self):
-        alpha = 0.05
-        with self.param_lock:
-            d_th = (self.target_theta - self.curr_theta + math.pi) % (2 * math.pi) - math.pi
-            self.curr_theta += d_th * alpha
-            d_ph = (self.target_phi - self.curr_phi + math.pi) % (2 * math.pi) - math.pi
-            self.curr_phi += d_ph * alpha
-            
-            theta_val = self.curr_theta
-            traj = self.target_traj_gpu
-            iplv = self.target_iplv_gpu
-            morph = self.style_morph
-
-        with torch.inference_mode():
-            s0 = traj[0]
-            s8 = traj[8] - s0
-            s16 = traj[16] - s0
-            s24 = traj[24] - s0
-            s31 = traj[31] - s0
-
-            d_len = torch.hypot(s31[0], s31[1]) + 1e-6
-            dir_x, dir_y = s31[0] / d_len, s31[1] / d_len
-
-            v0 = torch.hypot(s8[0], s8[1]) + 1e-5
-            v1 = torch.hypot(s16[0] - s8[0], s16[1] - s8[1]) + 1e-5
-            v2 = torch.hypot(s24[0] - s16[0], s24[1] - s16[1]) + 1e-5
-            v3 = torch.hypot(s31[0] - s24[0], s31[1] - s24[1]) + 1e-5
-
-            total_v = v0 + v1 + v2 + v3
-            w_kick = float(torch.clamp(v0 / total_v * 1.8, 0.5, 1.4))
-            w_b1   = float(torch.clamp(v1 / total_v * 1.8, 0.5, 1.4))
-            w_b2   = float(torch.clamp(v2 / total_v * 1.8, 0.5, 1.4))
-            w_b3   = float(torch.clamp(v3 / total_v * 1.8, 0.5, 1.4))
-
-            live_bpm = 136.0 + float(torch.clamp(total_v * 2.5, 0.0, 10.0))
-            beat_hz = live_bpm / 60.0
-            beat_inc = (2.0 * math.pi * beat_hz / self.sr)
-
-            beat_phase = (self.groove_phase + beat_inc * self.bass_t_vec_gpu.squeeze(0)) % (2.0 * math.pi)
-            self.groove_phase = (self.groove_phase + beat_inc * self.block_size) % (2.0 * math.pi)
-            beat_norm = beat_phase / (2.0 * math.pi) 
-
-            sub_16th = (beat_norm * 4.0) % 1.0
-            step_idx = (beat_norm * 4.0).long() % 4 
-
-            attack_ramp = torch.clamp(sub_16th * 12.0, 0.0, 1.0)
-            is_kick = (step_idx == 0).float()
-            kick_sub_env = attack_ramp * torch.exp(-sub_16th * 6.0) * is_kick
-            kick_click = torch.clamp(sub_16th * 40.0, 0.0, 1.0) * torch.exp(-sub_16th * 28.0) * is_kick
-            
-            kick_freq = 46.0 + 135.0 * torch.exp(-sub_16th * 18.0)
-            k_incs = 2.0 * math.pi * kick_freq / self.sr
-            k_accum = torch.cumsum(k_incs, dim=0) + self.kick_phase
-            self.kick_phase = (k_accum[-1].item()) % (2.0 * math.pi)
-            
-            fullon_kick = (torch.sin(k_accum) * kick_sub_env + kick_click * 0.30 * (torch.rand(self.block_size, device=self.device)*2-1)) * (0.85 * w_kick)
-            sidechain_duck = 1.0 - 0.60 * kick_sub_env * morph
-
-            decay_bass = torch.exp(-sub_16th * 4.6)
-            is_b1 = (step_idx == 1).float() * w_b1
-            is_b2 = (step_idx == 2).float() * w_b2
-            is_b3 = (step_idx == 3).float() * w_b3
-            bass_step_gain = is_b1 + is_b2 + is_b3
-            rolling_bass_env = attack_ramp * decay_bass * bass_step_gain
-
-            low_g = torch.sum(iplv[:16, :], dim=0)
-            high_g = torch.sum(iplv[16:, :], dim=0)
-            total_pwr = (low_g + high_g) * 0.5
-            norm_pwr = total_pwr / (torch.max(total_pwr) + 1e-5)
-            companded_pwr = torch.log1p(4.0 * norm_pwr) / math.log(5.0)
-
-            cross_t = torch.abs(dir_x * (self.dy_gpu / SCALE_26MM) - dir_y * (self.dx_gpu / SCALE_26MM))
-            zap_pitch_bend = 1.0 + cross_t * (1.2 + 2.0 * morph)
-
-            target_edge_amps = (0.20 + 0.80 * companded_pwr * zap_pitch_bend).view(1, NUM_PAIRS, 1)
-            target_edge_amps = target_edge_amps * (0.24 / math.sqrt(NUM_PAIRS))
-            edge_ramp = self.prev_edge_amps_gpu + (target_edge_amps - self.prev_edge_amps_gpu) * self.t_ramp_gpu
-            self.prev_edge_amps_gpu.copy_(target_edge_amps)
-
-            shaker_env = attack_ramp.view(1, 1, self.block_size) * torch.exp(-sub_16th * 9.0).view(1, 1, self.block_size)
-            edge_step_mask = ((torch.arange(NUM_PAIRS, device=self.device).view(1, NUM_PAIRS, 1) % 4) == step_idx.view(1, 1, self.block_size)).float()
-            bongo_env = attack_ramp.view(1, 1, self.block_size) * decay_bass.view(1, 1, self.block_size) * edge_step_mask
-            is_snare_beat = (step_idx == 2).float().view(1, 1, self.block_size)
-            snare_env = attack_ramp.view(1, 1, self.block_size) * torch.exp(-sub_16th * 6.0).view(1, 1, self.block_size) * is_snare_beat
-
-            modal_perc_env = (self.mask_short * shaker_env * 0.4 + 
-                              self.mask_med   * bongo_env  * 0.8 + 
-                              self.mask_long  * snare_env  * 0.7)
-
-            d_th_all = torch.abs((theta_val - self.theta_nodes_gpu + math.pi) % (2.0 * math.pi) - math.pi)
-            raw_gains = torch.clamp(1.0 - (d_th_all / self.step_rad), min=0.0, max=1.0)
-            target_key_gains = torch.cos((1.0 - raw_gains) * (math.pi * 0.5))
-            target_key_gains = target_key_gains / (torch.norm(target_key_gains) + 1e-6)
-
-            left_pad, right_pad = torch.zeros(self.block_size, device=self.device), torch.zeros(self.block_size, device=self.device)
-            left_perc, right_perc = torch.zeros(self.block_size, device=self.device), torch.zeros(self.block_size, device=self.device)
-            bass_total = torch.zeros(self.block_size, device=self.device)
-
-            active_mask = (self.prev_key_gains_gpu > 1e-4) | (target_key_gains > 1e-4)
-            active_indices = torch.nonzero(active_mask).squeeze(-1)
-
-            pan_l = (1.0 - self.mid_x_gpu * 0.4)
-            pan_r = (1.0 + self.mid_x_gpu * 0.4)
-            fm_amt = (0.15 + 0.50 * morph + cross_t * 0.6).view(1, NUM_PAIRS, 1)
-
-            for k in active_indices:
-                g_start = self.prev_key_gains_gpu[k]
-                g_end = target_key_gains[k]
-                g_ramp_k = (g_start + (g_end - g_start) * self.t_ramp_gpu.squeeze(0)).unsqueeze(0)
-
-                p_mat_k = self.bank_phases_gpu[k:k+1].unsqueeze(-1) + self.phase_incs_gpu[k:k+1] * self.t_vec_gpu
-                
-                pad_carrier = torch.sin(p_mat_k) + 0.12 * torch.sin(2.0 * p_mat_k)
-                pad_wave = pad_carrier * (edge_ramp * g_ramp_k) * sidechain_duck.view(1, 1, self.block_size)
-                left_pad += torch.sum(pad_wave * pan_l, dim=1).squeeze(0)
-                right_pad += torch.sum(pad_wave * pan_r, dim=1).squeeze(0)
-
-                fm_mod = torch.sin(2.0 * p_mat_k) * fm_amt
-                perc_carrier = torch.sin(p_mat_k + fm_mod) + 0.20 * torch.sin(3.0 * p_mat_k)
-                perc_wave = perc_carrier * (edge_ramp * modal_perc_env * g_ramp_k) * sidechain_duck.view(1, 1, self.block_size)
-                
-                left_perc += torch.sum(perc_wave * pan_l, dim=1).squeeze(0)
-                right_perc += torch.sum(perc_wave * pan_r, dim=1).squeeze(0)
-
-                b_mat_k = self.bass_phases_gpu[k] + self.bass_incs_gpu[k, 0] * self.bass_t_vec_gpu.squeeze(0)
-                saw_bass = torch.sin(b_mat_k) + (0.20 + 0.40 * morph) * torch.sin(2.0 * b_mat_k) + (0.08 + 0.25 * morph) * torch.sin(3.0 * b_mat_k)
-                
-                b_env = (1.0 - morph) * 1.0 + morph * rolling_bass_env
-                bass_total += saw_bass * (b_env * g_ramp_k.squeeze() * (0.24 + 0.16 * morph)) * sidechain_duck
-
-            self.prev_key_gains_gpu.copy_(target_key_gains)
-            self.bank_phases_gpu = (self.bank_phases_gpu + self.phase_incs_gpu.squeeze(-1) * self.block_size) % (2.0 * math.pi)
-            self.bass_phases_gpu = (self.bass_phases_gpu + self.bass_incs_gpu.squeeze(-1) * self.block_size) % (2.0 * math.pi)
-
-            synth_l = left_pad * 0.45 + left_perc * (0.55 * morph)
-            synth_r = right_pad * 0.45 + right_perc * (0.55 * morph)
-            kick_out = fullon_kick * morph
-            
-            out_l = synth_l * 0.65 + bass_total * 0.35 + kick_out
-            out_r = synth_r * 0.65 + bass_total * 0.35 + kick_out
-
-            out_l = torch.tanh(out_l * 0.90) * 0.72
-            out_r = torch.tanh(out_r * 0.90) * 0.72
-
-            stereo_gpu = torch.stack([out_l, out_r], dim=1)
-            return stereo_gpu.cpu().numpy()
-
-# ==============================================================================
-# AUDIO STREAM THREAD
-# ==============================================================================
-def audio_thread_loop(synth, stop_event):
-    def cb(outdata, frames, time_info, status):
-        try:
-            chunk = synth.audio_queue.get_nowait()
-            outdata[:] = chunk
-        except queue.Empty:
-            outdata.fill(0)
-
-    for _ in range(12): synth.audio_queue.put(synth.render_block())
-
-    with sd.OutputStream(samplerate=SAMPLE_RATE, channels=2, callback=cb, blocksize=BLOCK_SIZE):
-        while not stop_event.is_set():
-            if synth.audio_queue.qsize() < 12: synth.audio_queue.put(synth.render_block())
-            else: pygame.time.wait(2)
-
-# ==============================================================================
-# MAIN TORUS NAVIGATION LOOP
-# ==============================================================================
-WIDTH, HEIGHT = 980, 780
-CENTER_X, CENTER_Y = 320, 360
-
-R_MAJOR = 160.0
-R_MINOR = 65.0
+SCALE_26MM = 2.0
+RAW_INTERVALS = ((DX_PAIRS / SCALE_26MM) * 12.0 * 1.5 + (DY_PAIRS / SCALE_26MM) * 7.0).astype(np.float32)
+CONSONANT_SCALE = np.array([-12, -11, -8, -7, -5, 0, 1, 4, 5, 7, 8, 12, 13, 16], dtype=np.float32)
+QUANTIZED_INTERVALS = np.array([CONSONANT_SCALE[np.argmin(np.abs(CONSONANT_SCALE - val))] for val in RAW_INTERVALS], dtype=np.float32)
 
 def torus_to_3d(theta, phi):
-    x = (R_MAJOR + R_MINOR * math.cos(phi)) * math.cos(theta)
-    y = (R_MAJOR + R_MINOR * math.cos(phi)) * math.sin(theta)
-    z = R_MINOR * math.sin(phi)
-    return x, y, z
+    return (R_MAJOR + R_MINOR * math.cos(phi)) * math.cos(theta), (R_MAJOR + R_MINOR * math.cos(phi)) * math.sin(theta), R_MINOR * math.sin(phi)
 
 def project_3d(x, y, z, pitch=0.85, yaw=0.0):
     x1, y1 = x * math.cos(yaw) - y * math.sin(yaw), x * math.sin(yaw) + y * math.cos(yaw)
-    x2, y2, z2 = x1, y1 * math.cos(pitch) - z * math.sin(pitch), y1 * math.sin(pitch) + z * math.cos(pitch)
-    return int(CENTER_X + x2), int(CENTER_Y - y2), z2
+    y2, z2 = y1 * math.cos(pitch) - z * math.sin(pitch), y1 * math.sin(pitch) + z * math.cos(pitch)
+    return int(CENTER_X + x1), int(CENTER_Y - y2), z2
 
+# ==============================================================================
+# ⚡ STUDIO CONTINUOUS TENSOR ENGINE (100% CUDA)
+# ==============================================================================
+class StudioContinuousEngine:
+    def __init__(self, sr=SAMPLE_RATE, device=DEVICE):
+        self.sr, self.block_size, self.device = sr, BLOCK_SIZE, device
+        self.rfft_freqs = torch.fft.rfftfreq(self.block_size, d=1.0/self.sr, device=self.device)
+        
+        self.roots_midi = np.array([48, 55, 50, 57, 52, 47, 54, 49, 56, 51, 46, 53], dtype=np.float32)
+        self.roots_hz_gpu = torch.from_numpy(440.0 * (2.0 ** ((self.roots_midi - 69.0) / 12.0))).to(self.device)
+
+        self.intervals_gpu = torch.from_numpy(QUANTIZED_INTERVALS).to(self.device, dtype=torch.float32).unsqueeze(0)
+        self.pan_l = torch.from_numpy(1.0 - MID_X_PAIRS * 0.5).to(self.device, dtype=torch.float32).unsqueeze(0)
+        self.pan_r = torch.from_numpy(1.0 + MID_X_PAIRS * 0.5).to(self.device, dtype=torch.float32).unsqueeze(0)
+
+        self.osc_phases = torch.zeros((1, NUM_PAIRS), device=self.device, dtype=torch.float32) 
+        self.kick_phases = torch.zeros((1, 6), device=self.device, dtype=torch.float32) 
+        self.bass_phases = torch.zeros((1, 6), device=self.device, dtype=torch.float32) 
+        
+        self.theta_phase = 0.0
+        self.prev_step = -1
+        
+        self.delay_buffer = torch.zeros((2, self.sr), device=self.device, dtype=torch.float32)
+        self.delay_ptr = 0
+
+        self.biological_theta_hz = 5.5 
+        self.iplv_tensor = torch.zeros((NUM_FREQS, NUM_PAIRS), device=self.device, dtype=torch.float32)
+        self.theta_pos, self.phi_pos = 0.0, 0.0
+        self.target_rx, self.target_ry = 0.0, 0.0
+
+        self.t_vec = torch.arange(self.block_size, device=self.device, dtype=torch.float32)
+        self.param_lock = threading.Lock()
+        self.audio_queue = queue.Queue(maxsize=32)
+
+    def update_state(self, theta_rad, phi_rad, iplv_32, theta_hz, rx, ry):
+        with self.param_lock:
+            self.theta_pos, self.phi_pos = theta_rad % (2.0 * math.pi), phi_rad % (2.0 * math.pi)
+            self.iplv_tensor.copy_(torch.from_numpy(np.abs(iplv_32)))
+            self.biological_theta_hz += (theta_hz - self.biological_theta_hz) * 0.1
+            self.target_rx, self.target_ry = rx, ry
+
+    def render_block(self):
+        with self.param_lock:
+            cur_th, cur_ph = self.theta_pos, self.phi_pos
+            iplv = self.iplv_tensor 
+            live_theta_hz = max(4.0, min(6.5, self.biological_theta_hz))
+            rx_val, ry_val = abs(self.target_rx), self.target_ry
+
+        with torch.inference_mode():
+            # 1. Потоковое Тета-время
+            theta_inc = 2.0 * math.pi * live_theta_hz / self.sr
+            t_phase_accum = self.theta_phase + self.t_vec * theta_inc
+            self.theta_phase = (t_phase_accum[-1].item() + theta_inc) % (2.0 * math.pi)
+            
+            theta_norm = (t_phase_accum / (2.0 * math.pi)) % 1.0
+
+            # 2. Time-Warping через ry
+            warp_factor = 2.0 ** -ry_val 
+            warped_norm = theta_norm ** warp_factor 
+
+            # 🔬 ЛИНЕЙНАЯ ИНТЕРПОЛЯЦИЯ 32 СРЕЗОВ (Убирает щелчки ступеньки)
+            float_idx = warped_norm * 31.0
+            idx_0 = float_idx.long().clamp(0, 30)
+            idx_1 = idx_0 + 1
+            alpha = (float_idx - idx_0.float()).unsqueeze(1) # [1024, 1]
+            tensor_stream = iplv[idx_0, :] * (1.0 - alpha) + iplv[idx_1, :] * alpha # [1024, 120] C0-smooth
+
+            mask_past    = torch.clamp(1.0 - (warped_norm / 0.33), 0.0, 1.0)
+            mask_present = torch.clamp(1.0 - torch.abs(warped_norm - 0.5) / 0.33, 0.0, 1.0)
+            mask_future  = torch.clamp((warped_norm - 0.66) / 0.34, 0.0, 1.0)
+
+            # 16-дольная ритмика (8 шестнадцатых на слог)
+            grid_8 = (theta_norm * 8.0)
+            step_16th = grid_8.long() % 8
+            sub_16th = grid_8 % 1.0
+            
+            curr_step = step_16th[0].item()
+            if curr_step in (0, 4) and curr_step != self.prev_step:
+                self.kick_phases.zero_()
+            self.prev_step = curr_step
+            
+            is_kick = (step_16th % 4 == 0).float()
+            is_bass = (step_16th % 4 != 0).float()
+            is_open_hat = ((step_16th == 2) | (step_16th == 6)).float()
+            is_closed_hat = ((step_16th == 1) | (step_16th == 3) | (step_16th == 5) | (step_16th == 7)).float()
+
+            theta_diff = (torch.arange(12, device=self.device) * (2.0 * math.pi / 12.0) - cur_th + math.pi) % (2.0 * math.pi) - math.pi
+            root_amps = torch.clamp(1.0 - torch.abs(theta_diff) / (math.pi / 3.0), 0.0, 1.0) ** 2
+            base_f0 = self.roots_hz_gpu[torch.argmax(root_amps)]
+
+            midi_notes = 48.0 + (base_f0 / 130.0) * 12.0 + self.intervals_gpu
+            freqs_120 = 440.0 * (2.0 ** ((midi_notes - 69.0) / 12.0)) 
+            incs_120 = 2.0 * math.pi * freqs_120 / self.sr 
+
+            # 3. KICK & SUB-BASS (6 связей Ядра)
+            core_tensor = tensor_stream[:, IDX_KICK]
+            core_power = torch.log1p(3.0 * core_tensor) / math.log(4.0)
+
+            kick_click_env = torch.exp(-sub_16th * 40.0) * is_kick
+            kick_body_env  = torch.exp(-sub_16th * 6.0) * is_kick
+            kick_freq = 48.0 + 2800.0 * kick_click_env
+            k_incs = (2.0 * math.pi * kick_freq / self.sr).unsqueeze(1)
+
+            k_phase_track = self.kick_phases + torch.cumsum(k_incs, dim=0)
+            self.kick_phases = (k_phase_track[-1:, :] % (2.0 * math.pi))
+
+            kick_waves = torch.sin(k_phase_track) * core_power
+            kick_raw = torch.sum(kick_waves, dim=1) * kick_body_env * (0.9 / math.sqrt(6.0))
+            kick_audio = torch.tanh(kick_raw * 1.8) * 0.85
+
+            # Rolling Sub-Bass (45-65 Hz)
+            bass_env = torch.exp(-sub_16th * 12.0) * is_bass
+            b_incs = (2.0 * math.pi * (base_f0 / 2.0) / self.sr)
+            b_phase_track = self.bass_phases + b_incs * self.t_vec.unsqueeze(1)
+            self.bass_phases = (b_phase_track[-1:, :] % (2.0 * math.pi))
+
+            bass_saws = 2.0 * ((b_phase_track / (2.0 * math.pi)) % 1.0) - 1.0
+            bass_waves = bass_saws * core_power * bass_env.unsqueeze(1) * (0.8 / math.sqrt(6.0))
+            bass_sat = torch.tanh(torch.sum(bass_waves, dim=1) * 1.6)
+            
+            fc_bass = 70.0 + 1200.0 * bass_env.mean().item()
+            H_bass = 1.0 / torch.sqrt(1.0 + (self.rfft_freqs / fc_bass) ** 8)
+            bass_audio = torch.fft.irfft(torch.fft.rfft(bass_sat) * H_bass, n=self.block_size) * 0.75
+
+            # 4. 66-VOICE TORUS PAD (66 связей Кольца)
+            pad_tensor = tensor_stream[:, IDX_PAD]
+            pad_incs = incs_120[:, IDX_PAD]
+
+            pad_phases_track = self.osc_phases[:, IDX_PAD] + pad_incs * self.t_vec.unsqueeze(1)
+            self.osc_phases[:, IDX_PAD] = (pad_phases_track[-1:, :] % (2.0 * math.pi))
+
+            saw1 = 2.0 * ((pad_phases_track / (2.0 * math.pi)) % 1.0) - 1.0
+            saw2 = 2.0 * (((pad_phases_track + 0.1) / (2.0 * math.pi)) % 1.0) - 1.0
+            pad_raw_waves = (saw1 + saw2) * 0.5 
+
+            pad_amps = (torch.log1p(2.5 * pad_tensor) / math.log(3.5)) * mask_present.unsqueeze(1)
+            pad_waves = pad_raw_waves * pad_amps * (0.4 / math.sqrt(66.0))
+
+            pad_l_raw = torch.sum(pad_waves * self.pan_l[:, IDX_PAD], dim=1)
+            pad_r_raw = torch.sum(pad_waves * self.pan_r[:, IDX_PAD], dim=1)
+
+            fc_pad = 300.0 + 2500.0 * math.cos(cur_ph)**2
+            H_pad = 1.0 / torch.sqrt(1.0 + (self.rfft_freqs / fc_pad) ** 4)
+            ducking = 1.0 - 0.75 * kick_body_env
+            pad_l = torch.fft.irfft(torch.fft.rfft(pad_l_raw) * H_pad, n=self.block_size) * ducking
+            pad_r = torch.fft.irfft(torch.fft.rfft(pad_r_raw) * H_pad, n=self.block_size) * ducking
+
+            # 5. 48-VOICE ACID SQUELCH (Плавный вейвфолдинг без артефактов)
+            acid_tensor = tensor_stream[:, IDX_ACID]
+            acid_incs = incs_120[:, IDX_ACID] * 2.0 
+
+            acid_phases_track = self.osc_phases[:, IDX_ACID] + acid_incs * self.t_vec.unsqueeze(1)
+            self.osc_phases[:, IDX_ACID] = (acid_phases_track[-1:, :] % (2.0 * math.pi))
+
+            raw_acid_saw = 2.0 * ((acid_phases_track / (2.0 * math.pi)) % 1.0) - 1.0
+            acid_folded = torch.sin(raw_acid_saw * (1.0 + acid_tensor * 4.0))
+            
+            acid_env = torch.exp(-sub_16th * 8.0).unsqueeze(1) * mask_future.unsqueeze(1)
+            acid_amps = (torch.log1p(2.5 * acid_tensor) / math.log(3.5)) * acid_env
+            acid_waves = acid_folded * acid_amps * (0.5 / math.sqrt(48.0))
+
+            acid_l_raw = torch.sum(acid_waves * self.pan_l[:, IDX_ACID], dim=1)
+            acid_r_raw = torch.sum(acid_waves * self.pan_r[:, IDX_ACID], dim=1)
+
+            fc_acid_scalar = 150.0 + 5500.0 * rx_val
+            Q = 1.5 + rx_val * 6.0
+            H_acid_raw = 1.0 / torch.sqrt((1.0 - (self.rfft_freqs / fc_acid_scalar)**2)**2 + (self.rfft_freqs / (fc_acid_scalar * Q))**2 + 1e-5)
+            H_acid = H_acid_raw / math.sqrt(Q)
+            
+            acid_l = torch.fft.irfft(torch.fft.rfft(acid_l_raw) * H_acid, n=self.block_size) * (0.6 * rx_val) * ducking
+            acid_r = torch.fft.irfft(torch.fft.rfft(acid_r_raw) * H_acid, n=self.block_size) * (0.6 * rx_val) * ducking
+
+            # 6. Хэты
+            early_energy = torch.mean(tensor_stream[0:10, :]).item()
+            hat_env = (torch.exp(-sub_16th * 14.0) * is_open_hat + torch.exp(-sub_16th * 45.0) * is_closed_hat) * min(1.0, early_energy * 2.0)
+            hat_noise = torch.randn(self.block_size, device=self.device)
+            H_hat = 1.0 - 1.0 / torch.sqrt(1.0 + (self.rfft_freqs / 8000.0) ** 8)
+            hat_audio = torch.fft.irfft(torch.fft.rfft(hat_noise * hat_env) * H_hat, n=self.block_size) * 0.9
+
+            # 7. Ping-Pong Delay
+            delay_samples = int(self.sr * 0.375 / live_theta_hz)
+            read_ptr = (self.delay_ptr - delay_samples) % self.sr
+            idx_vec = (torch.arange(self.block_size, device=self.device) + read_ptr) % self.sr
+            delayed_l = self.delay_buffer[0, idx_vec]
+            delayed_r = self.delay_buffer[1, idx_vec]
+
+            send_l = acid_l * 0.4 + pad_l * 0.3
+            send_r = acid_r * 0.4 + pad_r * 0.3
+            write_idx = (torch.arange(self.block_size, device=self.device) + self.delay_ptr) % self.sr
+            
+            self.delay_buffer[0, write_idx] = torch.tanh(send_l + delayed_r * 0.35)
+            self.delay_buffer[1, write_idx] = torch.tanh(send_r + delayed_l * 0.35)
+            self.delay_ptr = (self.delay_ptr + self.block_size) % self.sr
+
+            mix_l = kick_audio + bass_audio + hat_audio + pad_l + acid_l + delayed_l * 0.5 * ducking
+            mix_r = kick_audio + bass_audio + hat_audio + pad_r + acid_r + delayed_r * 0.5 * ducking
+
+            out = torch.stack([mix_l, mix_r], dim=1)
+            out = torch.tanh(out * 0.85) * 0.85
+            return out.cpu().numpy()
+
+def audio_thread_loop(synth, stop_event):
+    def cb(outdata, frames, time_info, status):
+        try: outdata[:] = synth.audio_queue.get_nowait()
+        except queue.Empty: outdata.fill(0)
+    for _ in range(8): synth.audio_queue.put(synth.render_block())
+    with sd.OutputStream(samplerate=SAMPLE_RATE, channels=2, callback=cb, blocksize=BLOCK_SIZE, dtype='float32'):
+        while not stop_event.is_set():
+            if synth.audio_queue.qsize() < 8: synth.audio_queue.put(synth.render_block())
+            else: pygame.time.wait(2)
+
+# ==============================================================================
+# 🎮 MAIN VISUALIZER (100% GPU VECTORIZED COORDINATES)
+# ==============================================================================
 def main():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("NeuroCanvas: Modal Percussion Psy-Torus Engine (Dual Nav Mode)")
+    pygame.display.set_caption("NeuroCanvas: Pure Tensor Continuous Psytrance Suite (v74)")
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont("consolas", 12, bold=True)
-    font_lg = pygame.font.SysFont("consolas", 16, bold=True)
+    font = pygame.font.SysFont("consolas", 14, bold=True)
+    font_lg = pygame.font.SysFont("consolas", 18, bold=True)
 
     engine = HeterarchicalBrainEngine()
     engine.start()
 
-    synth = ModalPercussionPsySynth()
+    synth = StudioContinuousEngine()
     stop_event = threading.Event()
     t_audio = threading.Thread(target=audio_thread_loop, args=(synth, stop_event))
     t_audio.start()
 
-    theta_avatar = 0.0
-    phi_avatar = 0.0
-    torus_trail = []
-    current_morph = 1.0
-    
-    # NEW: Default to ABSOLUTE pointer navigation (Center of Mass of SDR)
-    nav_mode = "ABSOLUTE"
+    operating_mode = 1  
+    avatar_theta, avatar_phi = 0.0, 0.0
+    torus_yaw = 0.0
+
+    KEYS = ["C", "G", "D", "A", "E", "B", "F#", "C#", "G#", "D#", "A#", "F"]
+    QUALITIES = [("Phrygian", 0.0), ("Harmonic Min", 0.5*math.pi), ("Minor", math.pi), ("Diminished", 1.5*math.pi)]
 
     running = True
     try:
         while running:
-            dt = min(0.05, clock.tick(60) / 1000.0)
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_F11:
-                        nav_mode = "RELATIVE" if nav_mode == "ABSOLUTE" else "ABSOLUTE"
+            dt = clock.tick(60) / 1000.0
 
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_UP] or keys[pygame.K_w]: current_morph = min(1.0, current_morph + 0.7 * dt)
-            elif keys[pygame.K_DOWN] or keys[pygame.K_s]: current_morph = max(0.0, current_morph - 0.7 * dt)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT: running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE: operating_mode = (operating_mode + 1) % 2
 
             frame = engine.get_frame()
             node = frame.fcz_macro
             ax = node.gamepad_axes
+            active_iplv = node.iplv_32 # [32, 120]
+            live_theta_hz = frame.theta_freq
 
-            force_x = ax.lx
-            force_y = -ax.ly
-            
-            if nav_mode == "RELATIVE":
-                # Old Joystick mode
-                accel_mult = 1.0 + max(0.0, ax.ry) * 0.5
-                base_speed = 1.5 * accel_mult
-                theta_avatar = (theta_avatar + force_x * base_speed * dt) % (2.0 * math.pi)
-                phi_avatar   = (phi_avatar   + force_y * base_speed * dt) % (2.0 * math.pi)
-            else:
-                # New ABSOLUTE Pointer Mode (SDR Center of Mass)
-                abs_x = np.mean(node.traj_32[:, 0])
-                abs_y = np.mean(node.traj_32[:, 1])
+            # 🔬 100% GPU РАСЧЕТ ВСЕХ 32 АБСОЛЮТНЫХ ТОЧЕК В ОДИН ТЕНЗОР (БЕЗ ЦИКЛОВ В PYTHON!)
+            with torch.inference_mode():
+                iplv_gpu = torch.from_numpy(active_iplv).to(DEVICE)
+                slice_pwr = torch.abs(iplv_gpu) + 1e-6
+                sum_pwr = torch.sum(slice_pwr, dim=1, keepdim=True)
                 
-                target_theta = (abs_x * 5.0) % (2.0 * math.pi)
-                target_phi   = (-abs_y * 5.0) % (2.0 * math.pi)
+                cx_all = torch.sum(slice_pwr * MID_X_GPU, dim=1, keepdim=True) / sum_pwr
+                cy_all = torch.sum(slice_pwr * MID_Y_GPU, dim=1, keepdim=True) / sum_pwr
+                vx_all = torch.sum(iplv_gpu * DX_GPU, dim=1, keepdim=True) / sum_pwr
+                vy_all = torch.sum(iplv_gpu * DY_GPU, dim=1, keepdim=True) / sum_pwr
                 
-                d_th = (target_theta - theta_avatar + math.pi) % (2.0 * math.pi) - math.pi
-                d_ph = (target_phi - phi_avatar + math.pi) % (2.0 * math.pi) - math.pi
-                
-                # Use ry (Temporal Bias) for coarticulation/glide speed
-                glide_speed = 2.0 * (1.0 + max(0.0, ax.ry))
-                theta_avatar = (theta_avatar + d_th * glide_speed * dt) % (2.0 * math.pi)
-                phi_avatar   = (phi_avatar   + d_ph * glide_speed * dt) % (2.0 * math.pi)
+                th_all = (torch.atan2(cy_all + vy_all, cx_all + vx_all) % (2.0 * math.pi)).squeeze(1).cpu().numpy()
+                rad_all = torch.hypot(cx_all + vx_all, cy_all + vy_all) * 2.0
+                ph_all = ((rad_all * math.pi) % (2.0 * math.pi)).squeeze(1).cpu().numpy()
 
-            synth.update_state(
-                theta=theta_avatar,
-                phi=phi_avatar,
-                traj_32=node.traj_32,
-                iplv_32=node.iplv_32,
-                theta_s=frame.theta_sync,
-                morph=current_morph
-            )
+            head_th, head_ph = th_all[-1], ph_all[-1]
+            glide_speed = 4.0 * (1.0 + max(0.0, ax.ry))
+            avatar_theta += ((head_th - avatar_theta + math.pi) % (2.0 * math.pi) - math.pi) * glide_speed * dt
+            avatar_phi   += ((head_ph - avatar_phi + math.pi) % (2.0 * math.pi) - math.pi) * glide_speed * dt
+            avatar_theta = avatar_theta % (2.0 * math.pi)
+            avatar_phi   = avatar_phi % (2.0 * math.pi)
 
-            torus_trail.append((theta_avatar, phi_avatar))
-            if len(torus_trail) > 35: torus_trail.pop(0)
+            synth.update_state(avatar_theta, avatar_phi, active_iplv, live_theta_hz, ax.rx, ax.ry)
 
-            # ------------------------------------------------------------------
-            # RENDERING
-            # ------------------------------------------------------------------
-            screen.fill((6, 8, 12))
+            screen.fill((10, 12, 18))
 
-            for k in range(12):
-                th = k * (2.0 * math.pi / 12.0)
-                pts = [project_3d(*torus_to_3d(th, p))[:2] for p in np.linspace(0, 2.0*math.pi, 20)]
-                pygame.draw.lines(screen, (20, 28, 38), True, pts, 1)
-                sx, sy, sz = project_3d(*torus_to_3d(th, 0))
-                if sz > -50:
-                    screen.blit(font.render(TORUS_FIFTHS[k], True, (0, 200, 255)), (sx-6, sy-6))
-
+            # Сетка Тора
             for m in range(4):
                 ph = m * (2.0 * math.pi / 4.0)
-                pts = [project_3d(*torus_to_3d(t, ph))[:2] for t in np.linspace(0, 2.0*math.pi, 40)]
-                pygame.draw.lines(screen, (30, 42, 56), True, pts, 1)
+                pts = [project_3d(*torus_to_3d(t, ph), yaw=torus_yaw)[:2] for t in np.linspace(0, 2.0*math.pi, 60)]
+                color = (60, 40, 70) if m != 0 else (120, 60, 160)
+                pygame.draw.lines(screen, color, True, pts, 2 if m == 0 else 1)
+                lx, ly, lz = project_3d(*torus_to_3d(math.pi/2.5, m * (2.0 * math.pi / 4.0)), yaw=torus_yaw)
+                screen.blit(font.render(QUALITIES[m][0], True, (150, 150, 150)), (lx, ly))
 
-            if len(torus_trail) > 1:
-                t_pts = [project_3d(*torus_to_3d(th, ph))[:2] for th, ph in torus_trail]
-                pygame.draw.lines(screen, (0, 180, 255), False, t_pts, 2)
+            for i, key in enumerate(KEYS):
+                th = i * (2.0 * math.pi / 12.0)
+                pts = [project_3d(*torus_to_3d(th, p), yaw=torus_yaw)[:2] for p in np.linspace(0, 2.0*math.pi, 30)]
+                pygame.draw.lines(screen, (35, 30, 45), True, pts, 1)
+                tx, ty, tz = project_3d(*torus_to_3d(th, 0.0), yaw=torus_yaw)
+                if tz > -10:
+                    pygame.draw.circle(screen, (0, 200, 255), (tx, ty), 4)
+                    screen.blit(font_lg.render(key, True, (0, 255, 200)), (tx + 8, ty - 10))
 
-            asx, asy, _ = project_3d(*torus_to_3d(theta_avatar, phi_avatar))
-            hue = int(np.clip((ax.ry + 1.0) / 2.0 * 255, 0, 255))
-            pygame.draw.circle(screen, (hue, 255 - hue, 255), (asx, asy), 11)
-            pygame.draw.circle(screen, (255, 255, 255), (asx, asy), 4)
+            # Кометный шлейф
+            traj_3d_points = []
+            for k in range(32):
+                px, py, pz = project_3d(*torus_to_3d(th_all[k], ph_all[k]), yaw=torus_yaw)
+                traj_3d_points.append((px, py, pz, th_all[k]))
 
-            # Trajectory Prediction
-            base_gx, base_gy = node.traj_32[0, 0], node.traj_32[0, 1]
-            traj_pts = [(asx, asy)]
-            for k in range(1, NUM_FREQS):
-                d_th = (node.traj_32[k, 0] - base_gx) * 0.4
-                d_ph = (node.traj_32[k, 1] - base_gy) * 0.4
-                psx, psy, _ = project_3d(*torus_to_3d(theta_avatar + d_th, phi_avatar - d_ph))
-                traj_pts.append((psx, psy))
-
-            for k in range(len(traj_pts) - 1):
-                c_val = int(255 * (k / len(traj_pts)))
-                pygame.draw.line(screen, (c_val, 140, 255 - c_val), traj_pts[k], traj_pts[k+1], 3)
-            pygame.draw.circle(screen, (255, 50, 200), traj_pts[-1], 5)
-
-            # 26-mm Array
-            cx_p, cy_p, r_p = 770, 240, 110
-            pygame.draw.circle(screen, (14, 20, 28), (cx_p, cy_p), r_p)
-            pygame.draw.circle(screen, (0, 200, 255), (cx_p, cy_p), r_p, 1)
-            
-            sc = (r_p - 15) / 10.14
-            px = cx_p + (COORDS_X * sc).astype(int)
-            py = cy_p + (COORDS_Y * sc).astype(int)
-            
-            mean_iplv = np.mean(np.abs(node.iplv_32), axis=0)
-            max_v = np.max(mean_iplv) + 1e-6
-            for p in range(NUM_PAIRS):
-                v = mean_iplv[p] / max_v
-                if v > 0.15:
-                    c = int(np.clip(v * 255, 50, 255))
-                    pygame.draw.line(screen, (0, c, int(c*0.8)), (px[I_IDX[p]], py[I_IDX[p]]), (px[J_IDX[p]], py[J_IDX[p]]), 1)
-            for c_i in range(16):
-                pygame.draw.circle(screen, (255, 220, 0), (px[c_i], py[c_i]), 4)
+            for k in range(31):
+                p1 = traj_3d_points[k]
+                p2 = traj_3d_points[k+1]
                 
-            screen.blit(font.render("26-MM SENSOR ARRAY (120 iPLV)", True, (255, 255, 255)), (680, 100))
+                d_th_check = abs(p1[3] - p2[3])
+                if d_th_check < math.pi and p1[2] > -60 and p2[2] > -60:
+                    if k < 11:
+                        prog = k / 10.0
+                        r, g, b = 0, int(120*(1-prog) + 255*prog), int(255*(1-prog) + 220*prog)
+                    elif k < 22:
+                        prog = (k - 11) / 10.0
+                        r, g, b = int(255*prog), int(255*(1-prog) + 215*prog), int(180*(1-prog))
+                    else:
+                        prog = (k - 22) / 9.0
+                        r, g, b = 255, int(140*(1-prog) + 20*prog), int(220*prog)
+                    
+                    col = (r, g, b)
+                    thickness = max(1, int(1 + (k / 31.0) * 4))
+                    pygame.draw.line(screen, col, p1[:2], p2[:2], thickness)
+                    pygame.draw.circle(screen, col, p1[:2], max(1, int(1 + (k / 31.0) * 3)))
 
-            # ------------------------------------------------------------------
-            # UI DASHBOARD
-            # ------------------------------------------------------------------
-            ui_y = HEIGHT - 140
-            pygame.draw.rect(screen, (12, 16, 24), (0, ui_y, WIDTH, 140))
-            pygame.draw.line(screen, (0, 200, 255), (0, ui_y), (WIDTH, ui_y), 2)
+            # Аватар
+            asx, asy, asz = project_3d(*torus_to_3d(avatar_theta, avatar_phi), yaw=torus_yaw)
+            radius = max(3, int(15 + asz * 0.06)) 
+            alpha_col = (255, 50, 150) if asz > 0 else (100, 20, 60)
+            pygame.draw.circle(screen, alpha_col, (asx, asy), radius)
+            pygame.draw.circle(screen, (255, 255, 255), (asx, asy), max(2, radius // 3))
 
-            k_curr = int(round((theta_avatar / (2.0 * math.pi)) * 12.0)) % 12
-            k_next = (k_curr + 1) % 12
-            blend_pct = ((theta_avatar / (2.0 * math.pi)) * 12.0) % 1.0
-
-            bar_x, bar_y, bar_w, bar_h = 580, ui_y + 15, 360, 14
-            pygame.draw.rect(screen, (20, 30, 45), (bar_x, bar_y, bar_w, bar_h))
-            fill_w = int(current_morph * bar_w)
-            m_col = (int(current_morph * 255), int(180 * (1 - current_morph)), int(255 * (1 - current_morph)))
-            pygame.draw.rect(screen, m_col, (bar_x, bar_y, fill_w, bar_h))
-            pygame.draw.rect(screen, (0, 200, 255), (bar_x, bar_y, bar_w, bar_h), 1)
-
-            stage_name = "DARK PSY-CHILL" if current_morph < 0.35 else ("PSY-PROGRESSIVE" if current_morph < 0.70 else "FULL-ON PSYTRANCE")
-            screen.blit(font_lg.render(f"TONAL TORUS | {TORUS_FIFTHS[k_curr]} -> {TORUS_FIFTHS[k_next]} ({blend_pct*100:.0f}%)", True, (255, 255, 255)), (20, ui_y + 10))
-            screen.blit(font.render(f"DANCEFLOOR [W/S]: {stage_name} | 120-EDGE MODAL PERCUSSION", True, m_col), (bar_x, ui_y + 35))
+            # Панели
+            PANEL_X = 850
+            sdr_y = 40
+            screen.blit(font_lg.render("STREAMING 120-EDGE MATRIX", True, (0, 200, 255)), (PANEL_X, sdr_y))
+            pygame.draw.rect(screen, (20, 25, 35), (PANEL_X, sdr_y + 30, 400, 150))
+            pygame.draw.rect(screen, (0, 100, 150), (PANEL_X, sdr_y + 30, 400, 150), 1)
             
-            sync_str = f"SYNC: {frame.theta_sync*100:.0f}%" + (f" | DEVICES: {frame.num_live}" if frame.num_live > 1 else "")
-            screen.blit(font.render(f"NAV [F11]: {nav_mode} | [lx, ly]: X={force_x:+.2f} Y={force_y:+.2f} | {sync_str}", True, (0, 200, 255)), (20, ui_y + 35))
+            mean_iplv = np.mean(np.abs(active_iplv), axis=0)
+            max_v = np.max(mean_iplv) + 1e-6
+            for i in range(120):
+                val = mean_iplv[i] / max_v
+                h = int(val * 140)
+                if i in idx_inner_inner: col = (255, 80, 80)
+                elif i in idx_outer_outer: col = (80, 255, 120)
+                else: col = (80, 150, 255)
+                pygame.draw.rect(screen, col, (PANEL_X + 10 + i*3, sdr_y + 30 + 145 - h, 2, h))
+
+            ry_l = sdr_y + 210
+            screen.blit(font_lg.render("CONTINUOUS SDR NEUROFEEDBACK", True, (255, 100, 200)), (PANEL_X, ry_l))
+            pygame.draw.rect(screen, (35, 20, 25), (PANEL_X, ry_l + 30, 400, 180))
+            pygame.draw.rect(screen, (150, 50, 100), (PANEL_X, ry_l + 30, 400, 180), 1)
             
-            rx_str = "STABLE (Consonant)" if abs(ax.rx) < 0.15 else f"TABLA/ZAP BEND (Acid +{abs(ax.rx):.2f})"
-            screen.blit(font.render(f"SAGITTA [rx]: {ax.rx:+.2f} -> {rx_str}", True, (255, 200, 100)), (20, ui_y + 60))
+            th_idx = int(round((avatar_theta / (2.0 * math.pi)) * 12.0)) % 12
+            ph_idx = int(round((avatar_phi / (2.0 * math.pi)) * 4.0)) % 4
+            current_bpm = live_theta_hz * 30.0 
             
-            ry_str = "ROLLING BASS GALLOP (Future)" if ax.ry > 0.15 else ("HEAVY SUB-BODY (Past)" if ax.ry < -0.15 else "BALANCED")
-            screen.blit(font.render(f"TEMPORAL BIAS [ry]: {ax.ry:+.2f} -> {ry_str} (Glide x{1.0 + max(0.0, ax.ry):.2f})", True, (255, 120, 220)), (20, ui_y + 85))
+            screen.blit(font_lg.render(f"KEY: {KEYS[th_idx]} {QUALITIES[ph_idx][0]}", True, (0, 255, 100)), (PANEL_X + 15, ry_l + 45))
+            screen.blit(font_lg.render(f"THETA FREQ: {live_theta_hz:.2f} Hz -> {current_bpm:.0f} BPM", True, (255, 255, 255)), (PANEL_X + 15, ry_l + 70))
+            
+            screen.blit(font.render("• Cyan Tail (0..10)  -> Continuous Sub-Kick", True, (0, 255, 200)), (PANEL_X + 15, ry_l + 105))
+            screen.blit(font.render("• Gold Body (11..21) -> 66-Voice Torus Pad", True, (255, 220, 50)), (PANEL_X + 15, ry_l + 130))
+            screen.blit(font.render("• Pink Head (22..31) -> Smooth Wavefold Squelch", True, (255, 50, 150)), (PANEL_X + 15, ry_l + 155))
+
+            ui_y = HEIGHT - 60
+            pygame.draw.rect(screen, (15, 12, 22), (0, ui_y, WIDTH, 60))
+            pygame.draw.line(screen, (0, 255, 200), (0, ui_y), (WIDTH, ui_y), 3)
+            screen.blit(font_lg.render("NEUROCANVAS V74 | CONTINUOUS TENSOR PSYTRANCE | [SPACE] Toggle", True, (255, 255, 255)), (20, ui_y + 20))
 
             pygame.display.flip()
 
