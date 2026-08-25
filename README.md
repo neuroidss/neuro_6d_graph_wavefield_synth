@@ -146,7 +146,7 @@ $$\text{Total Edges} = C_4^2 + C_{12}^2 + (4 \times 12) = 6 + 66 + 48 = 120$$
 
 ### 2.3 Causal Instantaneous Directed iPLV (Zero Volume Conduction)
 To eradicate instantaneous volume conduction across the 26-mm micro-array ($\Delta \varphi = 0$) [Bruña, Maestú, & Pereda, 2018; Nolte et al., 2004]:
-$$\text{iPLV}_{i,j}(t) = \sin\left(\varphi_i(t) - \varphi_j(t)\right) = \Im \left\{ \frac{\dot{x}_i(t)}{|\dot{x}_i(t)|} \cdot \left(\frac{\dot{x}_j(t)}{|\dot{x}_j(t)|}\right)^* \right\}$$
+$$\mathrm{iPLV}_{i,j}(t) = \sin\left(\varphi_i(t) - \varphi_j(t)\right) = \Im \left\{ \frac{\dot{x}_i(t)}{|\dot{x}_i(t)|} \cdot \left(\frac{\dot{x}_j(t)}{|\dot{x}_j(t)|}\right)^* \right\}$$
 
 ### 2.4 Continuous Sub-Bin Spectral Centroid & Physical Phase Velocity ($\frac{d\Phi_\theta}{dt}$)
 To eliminate discrete FFT bin jumps ($126 \leftrightarrow 176 \leftrightarrow 192\text{ BPM}$), the continuous biological Theta frequency is computed directly as the **sub-bin spectral center of mass** with exponential moving average smoothing:
@@ -215,7 +215,7 @@ $$\text{Live BPM}(t) = \bar{f}_\theta(t) \times 30.0$$
 ### 3.2 120-Voice Non-Linear Spatial Tensor Synthesis
 Every audio block ($N = 1024$ samples) evaluates the complete tensor product without dimensionality reduction:
 
-$$\text{Audio}_L(t) = \sum_{p=1}^{120} \text{Voice}_p(t) \cdot \text{SDR\_Weight}_p(\tau(t)) \cdot \text{Pan}_L(p) \cdot \left[ M_{\text{Past}}(\tau) \cdot W_{\text{Kick}}(p) + M_{\text{Pres}}(\tau) \cdot W_{\text{Pad}}(p) + M_{\text{Fut}}(\tau) \cdot W_{\text{Acid}}(p) \right]$$
+$$\mathrm{Audio}_L(t) = \sum_{p=1}^{120} \mathrm{Voice}_p(t) \cdot \mathrm{SDR\_Weight}_p(\tau(t)) \cdot \mathrm{Pan}_L(p) \cdot \left[ M_{\mathrm{Past}}(\tau) \cdot W_{\mathrm{Kick}}(p) + M_{\mathrm{Pres}}(\tau) \cdot W_{\mathrm{Pad}}(p) + M_{\mathrm{Fut}}(\tau) \cdot W_{\mathrm{Acid}}(p) \right]$$
 
 ### 3.3 3-Phase Dynamic Instrument Modeling
 1. **Sub-Kick & Sub-Bass (6 Inner Links):** Clean pitch drop with phase reset on downbeats:
